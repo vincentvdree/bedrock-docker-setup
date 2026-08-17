@@ -1,0 +1,12 @@
+parameters:
+	level: 10
+	paths:
+		- config
+		- tests
+	scanFiles:
+		# WP-CLI is not a Composer dependency of this project; the migration commands
+		# only ever run inside WP-CLI, which loads it for them.
+		- vendor/php-stubs/wordpress-stubs/wordpress-stubs.php
+		- vendor/php-stubs/wp-cli-stubs/wp-cli-stubs.php
+		- vendor/php-stubs/wp-cli-stubs/wp-cli-tools-stubs.php
+		- phpstan/constants.php

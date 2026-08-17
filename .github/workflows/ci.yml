@@ -1,0 +1,100 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  # Mirrors docker/php/Dockerfile's `dunglas/frankenphp:php8.5` base image.
+  PHP_VERSION: '8.5'
+  PHP_EXTENSIONS: mysqli, pdo_mysql, zip, gd, intl, exif, opcache, imagick
+
+jobs:
+  lint:
+    name: Lint & static analysis
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ env.PHP_VERSION }}
+          extensions: ${{ env.PHP_EXTENSIONS }}
+          coverage: none
+          tools: composer:v2
+
+      - uses: ramsey/composer-install@v3
+
+      - name: PHP CS Fixer
+        run: vendor/bin/php-cs-fixer fix --dry-run --diff --ansi
+
+      - name: PHPStan
+        run: vendor/bin/phpstan analyse --no-progress --ansi
+
+  test:
+    name: Full-stack test (Docker + WordPress + PHPUnit)
+    runs-on: ubuntu-latest
+    env:
+      COMPOSE: docker compose -f compose.yaml -f docker/ci/compose.ci.yaml
+      WP_HOME: http://localhost:8080
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Write .env
+        run: |
+          random() { openssl rand -hex 32; }
+          cat > .env <<EOF
+          WP_ENV=development
+          WP_HOME=${WP_HOME}
+          WP_SITEURL=${WP_HOME}/wp
+          DB_NAME=wordpress
+          DB_USER=wordpress
+          DB_PASSWORD=$(random)
+          DB_ROOT_PASSWORD=$(random)
+          AUTH_KEY=$(random)
+          SECURE_AUTH_KEY=$(random)
+          LOGGED_IN_KEY=$(random)
+          NONCE_KEY=$(random)
+          AUTH_SALT=$(random)
+          SECURE_AUTH_SALT=$(random)
+          LOGGED_IN_SALT=$(random)
+          NONCE_SALT=$(random)
+          EOF
+
+      - name: Start database and cache
+        run: $COMPOSE up -d --wait db redis
+
+      - name: Build and start the app image
+        run: $COMPOSE up -d --build php
+
+      - name: composer install
+        run: $COMPOSE exec -T php composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Install WordPress
+        run: |
+          $COMPOSE exec -T php wp core install \
+            --url="${WP_HOME}" \
+            --title="CI" \
+            --admin_user=admin \
+            --admin_password=admin \
+            --admin_email=admin@example.com \
+            --skip-email
+
+      - name: PHPUnit
+        run: $COMPOSE exec -T php vendor/bin/phpunit --colors=always
+
+      - name: Dump logs on failure
+        if: failure()
+        run: $COMPOSE logs
+
+      - name: Tear down
+        if: always()
+        run: $COMPOSE down -v

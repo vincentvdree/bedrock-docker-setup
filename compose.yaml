@@ -1,0 +1,78 @@
+services:
+  php:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+      # Explicit, so the deployable image never picks up a stage added later —
+      # compose.override.yaml switches this to `dev` for local development.
+      target: app
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: unless-stopped
+    ports:
+      # Same port inside and out, so the container can reach itself at the
+      # WP_HOME URL. Loopback requests, the REST API check and wp-cron all
+      # resolve WP_HOME from inside the container and would fail otherwise.
+      - "8080:8080"
+    env_file:
+      - .env
+    environment:
+      DB_HOST: db
+      DB_NAME: ${DB_NAME}
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      WP_ENV: ${WP_ENV:-production}
+      # A bare port keeps Caddy on plain HTTP. Set a hostname to enable
+      # automatic HTTPS. Must match the published port above and WP_HOME.
+      SERVER_NAME: ":8080"
+      # Bedrock's document root, relative to WORKDIR /app.
+      SERVER_ROOT: web/
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://localhost:8080/"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+      start_period: 20s
+    volumes:
+      - wordpress:/app
+      - caddy-data:/data
+      - composer-cache:/var/www/.cache
+      - caddy-config:/config
+    networks:
+      - wordpress
+
+  db:
+    image: mariadb:11.8
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_NAME}
+      MYSQL_USER: ${DB_USER}
+      MYSQL_PASSWORD: ${DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD}
+    healthcheck:
+      test: ["CMD", "healthcheck.sh", "--connect", "--innodb_initialized"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    volumes:
+      - db-data:/var/lib/mysql
+    networks:
+      - wordpress
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    networks:
+      - wordpress
+
+volumes:
+  db-data:
+  composer-cache:
+  wordpress:
+  caddy-data:
+  caddy-config:
+
+networks:
+  wordpress:

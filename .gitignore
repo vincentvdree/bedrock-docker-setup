@@ -1,0 +1,44 @@
+# Application
+web/app/plugins/*
+!web/app/plugins/.gitkeep
+# Ignore Composer-installed mu-plugin directories; single-file mu-plugins are tracked intentionally
+web/app/mu-plugins/*/
+web/app/themes/twentytwentyfive/
+web/app/upgrade
+web/app/uploads/*
+!web/app/uploads/.gitkeep
+web/app/cache/*
+
+# WordPress
+web/wp
+web/.htaccess
+
+# Logs
+*.log
+
+# Dotenv
+.env
+.env.*
+!.env.example
+
+# PHP-CS-Fixer
+.php-cs-fixer.cache
+
+# PHPStan
+.phpstan/cache
+
+# Composer
+/vendor
+
+# PHPUnit
+phpunit.xml
+.phpunit.result.cache
+.phpunit.cache
+
+# WP-CLI
+wp-cli.local.yml
+
+# PHPStorm
+.idea
+
+web/app/db.php

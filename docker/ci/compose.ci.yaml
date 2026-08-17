@@ -1,0 +1,15 @@
+# CI-only overlay for compose.yaml, used by .github/workflows/ci.yml:
+#
+#   docker compose -f compose.yaml -f docker/ci/compose.ci.yaml ...
+#
+# compose.yaml's `php` service builds the deployable `app` stage and expects
+# /app to already contain the built application — in production something
+# outside this repo puts it there. This overlay bind-mounts the checkout over
+# it instead, purely so CI can composer-install and run the test suite
+# against the same image that ships. It intentionally does not use
+# compose.override.yaml: that file targets the `dev` stage, which adds
+# local-only tooling (Claude Code) that has no place in CI.
+services:
+  php:
+    volumes:
+      - ./:/app:cached

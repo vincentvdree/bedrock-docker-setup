@@ -1,0 +1,90 @@
+# ~/.bashrc — interactive shell config.
+#
+# Prompt is a full-width bar:
+#
+#   > current-dir  __________________________  < /full/path  HH:MM:SS
+#   $ your command here
+#
+# The left marker ">" carries the current directory (basename), an underscore
+# rule fills the gap, and the right marker "<" carries the full path and the
+# time the prompt was drawn. Input goes on the second line so the cursor never
+# lands at the far right of the terminal.
+
+# Interactive shells only.
+case $- in
+    *i*) ;;
+      *) return ;;
+esac
+
+# ---------------------------------------------------------------- history ----
+HISTSIZE=10000
+HISTFILESIZE=50000
+HISTCONTROL=ignoreboth          # drop duplicates and leading-space commands
+HISTTIMEFORMAT='%F %T  '
+shopt -s histappend
+
+# ----------------------------------------------------------------- shopts ----
+shopt -s checkwinsize           # keep $COLUMNS/$LINES correct after a resize
+shopt -s cdspell                # fix minor typos in cd targets
+shopt -s globstar               # ** matches recursively
+
+# ------------------------------------------------------------- completion ----
+if [ -r /usr/share/bash-completion/bash_completion ]; then
+    . /usr/share/bash-completion/bash_completion
+fi
+
+# ----------------------------------------------------------------- colour ----
+export TERM="${TERM:-xterm-256color}"
+if command -v dircolors >/dev/null 2>&1; then
+    eval "$(dircolors -b)"
+fi
+
+alias ls='ls --color=auto'
+alias ll='ls -lh'
+alias la='ls -lha'
+alias grep='grep --color=auto'
+
+# ----------------------------------------------------------------- prompt ----
+# Everything is recomputed on each prompt: the path and terminal width change,
+# and the time must be current. Colour escapes are wrapped in \[ \] so readline
+# does not count them toward the line width.
+__prompt() {
+    local status=$?
+
+    local now
+    printf -v now '%(%H:%M:%S)T' -1
+
+    local dir="${PWD##*/}"
+    [ -z "$dir" ] && dir="/"        # PWD is "/"
+    local full="$PWD"
+
+    # Plain (uncoloured) left/right, used only to measure widths.
+    local left="> ${dir}"
+    local right="< ${full}  ${now}"
+
+    # Underscore fill for the gap. One padding space sits on each side of it,
+    # hence the "- 2". Clamp so a very long path just wraps instead of breaking
+    # the arithmetic.
+    local width=${COLUMNS:-80}
+    local pad=$(( width - ${#left} - ${#right} - 2 ))
+    (( pad < 3 )) && pad=3
+    local fill
+    printf -v fill '%*s' "$pad" ''
+    fill=${fill// /_}
+
+    local reset=$'\[\e[0m\]'
+    local green=$'\[\e[1;32m\]'
+    local red=$'\[\e[1;31m\]'
+    local cyan=$'\[\e[36m\]'
+    local dim=$'\[\e[2;37m\]'
+
+    local mark=$green
+    (( status != 0 )) && mark=$red
+
+    PS1="${mark}>${reset} ${cyan}${dir}${reset} ${dim}${fill}${reset} "
+    PS1+="${dim}<${reset} ${cyan}${full}${reset}  ${dim}${now}${reset}"
+    PS1+="\n${mark}\$${reset} "
+
+    history -a
+}
+PROMPT_COMMAND=__prompt

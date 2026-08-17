@@ -1,0 +1,19 @@
+#!/bin/sh
+# Launcher for Claude Code inside the php container (dev stage only).
+#
+# FrankenPHP inherits Caddy's image environment, which points XDG_DATA_HOME at
+# /data and XDG_CONFIG_HOME at /config — the two Caddy volumes, owned by root at
+# their mount points. Claude Code honours XDG_DATA_HOME for its version store,
+# so left alone it tries to install into Caddy's data volume and fails with
+# EACCES. Overriding those globally is not an option: Caddy would then keep its
+# certificates outside the caddy-data volume.
+#
+# So the fix is per-process. This wrapper lives in /usr/local/bin, ahead of the
+# installer's own launcher in ~/.local/bin, and hands Claude a home-directory
+# XDG layout before exec'ing it. The real launcher is left untouched, so
+# background auto-updates keep working the way the installer expects.
+XDG_DATA_HOME=/var/www/.local/share
+XDG_CONFIG_HOME=/var/www/.config
+export XDG_DATA_HOME XDG_CONFIG_HOME
+
+exec /var/www/.local/bin/claude "$@"

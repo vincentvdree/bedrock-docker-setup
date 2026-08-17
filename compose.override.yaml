@@ -1,0 +1,97 @@
+services:
+  php:
+    # Both files would otherwise derive the same tag from project + service name,
+    # so building the deployable image on this machine
+    # (`docker compose -f compose.yaml build`) would overwrite the dev image and
+    # silently take Claude Code out of the container until the next rebuild.
+    image: bedrock-docker-setup-php:dev
+    build:
+      # Adds the local-only tooling (Claude Code) on top of the deployable
+      # image. See the `dev` stage in docker/php/Dockerfile.
+      target: dev
+      args:
+        PHP_UID: ${PHP_UID:-1000}
+        PHP_GID: ${PHP_GID:-1000}
+    # Linux has no built-in host.docker.internal; host-gateway supplies it so
+    # Xdebug can reach the IDE listening on the host.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    # Merged with the 8080 published in compose.yaml. The Vite dev server
+    # (`make assets-dev`) runs in this container — the `dev` stage installs Node
+    # for it — and the browser loads its modules and HMR socket straight from
+    # http://localhost:5173, the URL PHP reads out of the plugin's dist/hot. Same
+    # port inside and out, because that URL is fixed by vite.config.js's
+    # server.origin. Development only: production serves the built dist/.
+    ports:
+      - "5173:5173"
+    environment:
+      WP_ENV: development
+      # The image ships xdebug.mode=off; this is the opt-in. Set XDEBUG_MODE in
+      # .env to change it without touching Compose — `off` removes the per-request
+      # connection attempt entirely, `develop,debug,coverage` adds coverage.
+      # Every other Xdebug setting lives in docker/php/xdebug.ini.
+      XDEBUG_MODE: ${XDEBUG_MODE:-develop,debug}
+      # Tells Xdebug which PhpStorm "server" this is, so PhpStorm can apply that
+      # server's path mapping (/app -> project root). Must match the server name
+      # in .idea/php.xml. Required for CLI debugging (WP-CLI, PHPUnit), where
+      # there is no HTTP request for PhpStorm to match on.
+      PHP_IDE_CONFIG: serverName=bedrock-docker-setup
+      # Picked up by the dev-mail-smtp mu-plugin, which points PHPMailer at
+      # MailCatcher instead of letting mail() leave the container.
+      SMTP_HOST: mailcatcher
+      SMTP_PORT: 1025
+    volumes:
+      # Bind the project over the image's /app so host edits are live.
+      - ./:/app:cached
+      - ./docker/php/php.ini:/usr/local/etc/php/conf.d/custom.ini:ro
+      - ./docker/php/xdebug.ini:/usr/local/etc/php/conf.d/xdebug.ini:ro
+      # Mounted so Caddyfile edits need only `docker compose restart php`.
+      - ./docker/php/Caddyfile:/etc/frankenphp/Caddyfile:ro
+      # Claude Code's home, split the way the installer splits it: the binary
+      # and its versions in ~/.local, the login and settings in ~/.claude
+      # (CLAUDE_CONFIG_DIR, set in the dev stage). Named volumes rather than
+      # binds — the state is the container's, not the repository's, and it has
+      # to outlive `docker compose up --build`. `docker volume rm` on either one
+      # resets that half: the config volume forces a fresh login, the state
+      # volume re-seeds the binary from the image.
+      - claude-state:/var/www/.local
+      - claude-config:/var/www/.claude
+
+  db:
+    ports:
+      - "3306:3306"
+
+  redis:
+    ports:
+      - "6379:6379"
+
+  # Database GUI at http://localhost:8081 — log in with DB_USER / DB_PASSWORD
+  # (or root / DB_ROOT_PASSWORD). Development only: it lives in the override
+  # file, so it is never part of a deployable compose.yaml.
+  adminer:
+    image: adminer:5
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      ADMINER_DEFAULT_SERVER: db
+    ports:
+      - "${ADMINER_PORT:-8081}:8080"
+    networks:
+      - wordpress
+
+  # Catches every outgoing mail instead of delivering it. SMTP on 1025 (inside
+  # the network only), web UI at http://localhost:1080.
+  mailcatcher:
+    image: sj26/mailcatcher:v0.10.0
+    restart: unless-stopped
+    ports:
+      - "${MAILCATCHER_PORT:-1080}:1080"
+    networks:
+      - wordpress
+
+# Merged with the volumes declared in compose.yaml.
+volumes:
+  claude-state:
+  claude-config:

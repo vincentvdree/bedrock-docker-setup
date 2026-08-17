@@ -1,0 +1,43 @@
+# FrankenPHP / Caddy configuration for Bedrock.
+# https://frankenphp.dev/docs/config — https://caddyserver.com/docs/caddyfile
+{
+	# Don't try to add Caddy's local CA to the host trust store.
+	skip_install_trust
+
+	{$CADDY_GLOBAL_OPTIONS}
+
+	frankenphp {
+		{$FRANKENPHP_CONFIG}
+	}
+}
+
+{$CADDY_EXTRA_CONFIG}
+
+{$SERVER_NAME:localhost} {
+	log
+
+	# Relative to WORKDIR (/app). Bedrock's document root is web/.
+	root {$SERVER_ROOT:web/}
+	encode zstd br gzip
+
+	# Caddy's file_server only recognises index.html/index.txt as index
+	# documents, so a directory request such as /wp/ would otherwise fall
+	# through to the root front controller and render a WordPress 404.
+	# Rewriting to the directory's own index.php restores the behaviour nginx
+	# gave us via `index index.php`. REQUEST_URI is preserved, so WordPress
+	# still sees /wp/ and can issue its canonical redirect to WP_HOME.
+	@directoryIndex file {path}index.php
+	rewrite @directoryIndex {path}index.php
+
+	# Never serve dotfiles (.env is outside the docroot, but be explicit).
+	@dotfiles path_regexp \/\.
+	respond @dotfiles 404
+
+	{$CADDY_SERVER_EXTRA_DIRECTIVES}
+
+	php_server {
+		# Worker mode is a large performance win but needs a WordPress-aware
+		# worker script and careful state handling — see the README.
+		#worker /app/worker.php
+	}
+}
