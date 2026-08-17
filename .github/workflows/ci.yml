@@ -48,6 +48,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # docker/ci/compose.ci.yaml bind-mounts the checkout over /app, so
+      # www-data's UID/GID must match the runner user that owns it on disk —
+      # otherwise Composer can't create /app/vendor and git refuses to touch
+      # the tree ("dubious ownership"). Mirrors what compose.override.yaml
+      # does for local dev.
+      - name: Export host UID/GID for the image build
+        run: |
+          echo "PHP_UID=$(id -u)" >> "$GITHUB_ENV"
+          echo "PHP_GID=$(id -g)" >> "$GITHUB_ENV"
+
       - name: Write .env
         run: |
           random() { openssl rand -hex 32; }

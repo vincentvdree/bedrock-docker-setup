@@ -9,7 +9,19 @@
 # against the same image that ships. It intentionally does not use
 # compose.override.yaml: that file targets the `dev` stage, which adds
 # local-only tooling (Claude Code) that has no place in CI.
+#
+# Because /app is bind-mounted (not built into the image), www-data's UID/GID
+# must match the runner user that owns the checkout on disk, same as
+# compose.override.yaml does for local dev — otherwise www-data can't write to
+# /app (Composer's vendor install fails) and git refuses to touch it at all
+# ("dubious ownership"). The workflow exports PHP_UID/PHP_GID from `id -u`/
+# `id -g` before building; the fallback here only matters if someone runs this
+# overlay by hand.
 services:
   php:
+    build:
+      args:
+        PHP_UID: ${PHP_UID:-1000}
+        PHP_GID: ${PHP_GID:-1000}
     volumes:
       - ./:/app:cached
